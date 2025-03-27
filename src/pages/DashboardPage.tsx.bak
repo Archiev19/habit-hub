@@ -1,0 +1,628 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { habits as habitsApi } from '../services/api';
+import AddHabitForm from '../components/AddHabitForm';
+import EditHabitForm from '../components/EditHabitForm';
+import StreakSummary from '../components/StreakSummary';
+import { calculateStreak, calculateLongestStreak } from '../utils/streakCalculator';
+
+// For development/testing without backend
+const USE_MOCK_DATA = process.env.NODE_ENV === 'development';
+
+// Predefined categories for selection (should match those in AddHabitForm)
+const CATEGORIES = [
+  'Health',
+  'Fitness',
+  'Productivity',
+  'Personal Development',
+  'Learning',
+  'Finance',
+  'Social',
+  'Creativity',
+  'Mindfulness',
+  'Other'
+];
+
+interface Habit {
+  _id: string;
+  title: string;
+  description?: string;
+  frequency: 'daily' | 'weekly';
+  completedDates: string[];
+  streakCount: number;
+  longestStreak?: number;
+  category?: string;
+  tags?: string[];
+  archived?: boolean;
+}
+
+// Mock habits for development
+const MOCK_HABITS: Habit[] = [
+  {
+    _id: 'habit1',
+    title: 'Morning Exercise',
+    description: 'Do 15 minutes of exercise every morning',
+    frequency: 'daily',
+    completedDates: ['2023-06-10', '2023-06-11'],
+    streakCount: 2,
+    longestStreak: 2,
+    category: 'Health',
+    tags: ['exercise', 'morning-routine'],
+    archived: false
+  },
+  {
+    _id: 'habit2',
+    title: 'Read a Book',
+    description: 'Read at least 10 pages of a book',
+    frequency: 'daily',
+    completedDates: ['2023-06-11'],
+    streakCount: 1,
+    longestStreak: 1,
+    category: 'Personal Development',
+    tags: ['reading', 'learning'],
+    archived: false
+  },
+  {
+    _id: 'habit3',
+    title: 'Weekly Review',
+    description: 'Review goals and progress for the week',
+    frequency: 'weekly',
+    completedDates: ['2023-06-05'],
+    streakCount: 1,
+    longestStreak: 1,
+    category: 'Productivity',
+    tags: ['reflection', 'planning'],
+    archived: false
+  },
+  {
+    _id: 'habit4',
+    title: 'Meditation Practice',
+    description: 'Practice meditation for 10 minutes',
+    frequency: 'daily',
+    completedDates: ['2023-05-20', '2023-05-21', '2023-05-22'],
+    streakCount: 0,
+    longestStreak: 3,
+    category: 'Mindfulness',
+    tags: ['mental-health', 'relaxation'],
+    archived: true
+  }
+];
+
+const DashboardPage: React.FC = () => {
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [filteredHabits, setFilteredHabits] = useState<Habit[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState<boolean>(false);
+  const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
+  const [showArchived, setShowArchived] = useState<boolean>(false);
+  const [filters, setFilters] = useState({
+    category: '',
+    searchTerm: '',
+  });
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  
+  // Categories for habit filtering
+  const CATEGORIES = ['health', 'productivity', 'learning', 'personal'];
+  
+  // Get all unique tags from habits for tag filtering
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    habits.forEach(habit => {
+      if (habit.tags && habit.tags.length > 0) {
+        habit.tags.forEach(tag => tags.add(tag));
+      }
+    });
+    return Array.from(tags);
+  }, [habits]);
+
+  const fetchHabits = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (USE_MOCK_DATA) {
+        // Use mock data in development
+        setHabits(MOCK_HABITS);
+        setLoading(false);
+        return;
+      }
+      
+      const habitsData = await habitsApi.getAll();
+      setHabits(habitsData);
+    } catch (error: any) {
+      console.error('Error fetching habits:', error);
+      setError('Failed to load habits. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Apply filters and archive status whenever habits, filters, or showArchived change
+  useEffect(() => {
+    let result = [...habits];
+    
+    // Filter by archive status first
+    if (!showArchived) {
+      result = result.filter(habit => !habit.archived);
+    }
+    
+    // Then apply other filters
+    // Filter by category
+    if (filters.category) {
+      result = result.filter(habit => habit.category === filters.category);
+    }
+    
+    // Filter by search term (check title, description, and tags)
+    if (filters.searchTerm) {
+      const searchLower = filters.searchTerm.toLowerCase();
+      result = result.filter(habit => 
+        habit.title.toLowerCase().includes(searchLower) || 
+        (habit.description && habit.description.toLowerCase().includes(searchLower)) ||
+        (habit.tags && habit.tags.some(tag => tag.toLowerCase().includes(searchLower)))
+      );
+    }
+    
+    setFilteredHabits(result);
+  }, [habits, filters, showArchived]);
+
+  useEffect(() => {
+    fetchHabits();
+  }, []);
+
+  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
+    setFilters({
+      ...filters,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      category: '',
+      searchTerm: '',
+    });
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const toggleShowArchived = () => {
+    setShowArchived(!showArchived);
+  };
+
+  const handleAddHabit = async (habitData: { 
+    title: string; 
+    description: string; 
+    frequency: 'daily' | 'weekly';
+    category?: string;
+    tags?: string[];
+  }) => {
+    try {
+      if (USE_MOCK_DATA) {
+        // Add habit to mock data
+        const newHabit: Habit = {
+          _id: `habit${habits.length + 1}`,
+          ...habitData,
+          completedDates: [],
+          streakCount: 0,
+          longestStreak: 0,
+          archived: false
+        };
+        setHabits([newHabit, ...habits]);
+        setShowAddForm(false);
+        return;
+      }
+      
+      await habitsApi.create(habitData);
+      setShowAddForm(false);
+      fetchHabits(); // Refresh habits list
+    } catch (error) {
+      console.error('Error creating habit:', error);
+      throw error;
+    }
+  };
+
+  const handleEditHabit = (habit: Habit) => {
+    setEditingHabit(habit);
+  };
+
+  const handleUpdateHabit = async (habitId: string, habitData: { 
+    title: string; 
+    description: string; 
+    frequency: 'daily' | 'weekly';
+    category?: string;
+    tags?: string[];
+    archived?: boolean;
+  }) => {
+    try {
+      if (USE_MOCK_DATA) {
+        // Update habit in mock data
+        setHabits(habits.map(habit => {
+          if (habit._id === habitId) {
+            return {
+              ...habit,
+              ...habitData
+            };
+          }
+          return habit;
+        }));
+        setEditingHabit(null);
+        return;
+      }
+      
+      const updatedHabit = await habitsApi.update(habitId, habitData);
+      setHabits(habits.map(habit => 
+        habit._id === habitId ? updatedHabit : habit
+      ));
+      setEditingHabit(null);
+    } catch (error) {
+      console.error('Error updating habit:', error);
+      throw error;
+    }
+  };
+
+  const handleDeleteHabit = async (habitId: string) => {
+    try {
+      if (USE_MOCK_DATA) {
+        // Remove habit from mock data
+        setHabits(habits.filter(habit => habit._id !== habitId));
+        setEditingHabit(null);
+        return;
+      }
+      
+      await habitsApi.delete(habitId);
+      setHabits(habits.filter(habit => habit._id !== habitId));
+      setEditingHabit(null);
+    } catch (error) {
+      console.error('Error deleting habit:', error);
+      throw error;
+    }
+  };
+
+  const toggleHabitCompletion = async (habitId: string) => {
+    try {
+      if (USE_MOCK_DATA) {
+        // Toggle completion in mock data
+        const today = new Date().toISOString().split('T')[0];
+        setHabits(habits.map(habit => {
+          if (habit._id === habitId) {
+            const isCompletedToday = habit.completedDates.includes(today);
+            
+            let updatedCompletedDates: string[];
+            if (isCompletedToday) {
+              // Remove today from completed dates
+              updatedCompletedDates = habit.completedDates.filter(date => date !== today);
+            } else {
+              // Add today to completed dates
+              updatedCompletedDates = [...habit.completedDates, today];
+            }
+            
+            // Calculate the new streak count
+            const newStreakCount = calculateStreak(updatedCompletedDates, habit.frequency);
+            
+            // Calculate the longest streak
+            const longestStreak = Math.max(
+              calculateLongestStreak(updatedCompletedDates, habit.frequency),
+              habit.longestStreak || 0
+            );
+            
+            return {
+              ...habit,
+              completedDates: updatedCompletedDates,
+              streakCount: newStreakCount,
+              longestStreak
+            };
+          }
+          return habit;
+        }));
+        return;
+      }
+      
+      const updatedHabit = await habitsApi.toggleCompletion(habitId);
+      setHabits(habits.map(habit => 
+        habit._id === habitId ? updatedHabit : habit
+      ));
+    } catch (error) {
+      console.error('Error toggling habit completion:', error);
+      setError('Failed to update habit. Please try again.');
+    }
+  };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="min-h-screen flex items-center justify-center text-red-500">{error}</div>;
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {showAddForm && (
+        <AddHabitForm
+          onSubmit={handleAddHabit}
+          onCancel={() => setShowAddForm(false)}
+        />
+      )}
+      
+      {editingHabit && (
+        <EditHabitForm
+          habit={editingHabit}
+          onSubmit={handleUpdateHabit}
+          onCancel={() => setEditingHabit(null)}
+          onDelete={handleDeleteHabit}
+        />
+      )}
+
+      {/* Header */}
+      <header className="bg-white shadow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+          <h1 className="text-2xl font-semibold text-gray-900">HabitHub</h1>
+          <div className="flex items-center space-x-4">
+            <p className="text-sm text-gray-600">Welcome, {user?.name}</p>
+            <button
+              onClick={handleLogout}
+              className="text-gray-600 hover:text-gray-900"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <main>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-medium text-gray-900">My Habits</h2>
+            <div className="space-x-2">
+              <button 
+                onClick={() => setShowAddForm(true)}
+                className="bg-primary-600 text-white hover:bg-primary-700 px-4 py-2 rounded-md text-sm font-medium"
+              >
+                Add New Habit
+              </button>
+              <button
+                onClick={handleLogout}
+                className="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+
+          {/* Streak Summary Stats */}
+          {habits.length > 0 && (
+            <StreakSummary habits={habits} />
+          )}
+
+          {/* Filters */}
+          <div className="bg-white p-4 shadow rounded-md mb-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="w-full sm:w-1/3">
+                <label htmlFor="searchTerm" className="block text-sm font-medium text-gray-700 mb-1">
+                  Search
+                </label>
+                <input
+                  type="text"
+                  id="searchTerm"
+                  name="searchTerm"
+                  value={filters.searchTerm}
+                  onChange={handleFilterChange}
+                  placeholder="Search title, description, tags..."
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                />
+              </div>
+              <div className="w-full sm:w-1/3">
+                <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                  Filter by Category
+                </label>
+                <select
+                  id="category"
+                  name="category"
+                  value={filters.category}
+                  onChange={handleFilterChange}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                >
+                  <option value="">All Categories</option>
+                  {CATEGORIES.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-full sm:w-1/3 flex flex-col">
+                <div className="mb-2">
+                  <button
+                    onClick={clearFilters}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+                <div className="flex items-center">
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={showArchived} 
+                      onChange={toggleShowArchived}
+                      className="sr-only peer" 
+                    />
+                    <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <span className="ml-3 text-sm font-medium text-gray-700">Show Archived</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Display active tag filters */}
+          {allTags.length > 0 && (
+            <div className="mt-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Filter by Tags:</p>
+              <div className="flex flex-wrap gap-2">
+                {allTags.map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => setFilters({ ...filters, searchTerm: tag })}
+                    className="inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 hover:bg-primary-100 hover:text-primary-800"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {habits.length === 0 ? (
+            <div className="bg-white shadow overflow-hidden sm:rounded-md p-6 text-center">
+              <p className="text-gray-500">You haven't created any habits yet.</p>
+              <button 
+                onClick={() => setShowAddForm(true)} 
+                className="mt-4 bg-primary-600 text-white hover:bg-primary-700 px-4 py-2 rounded-md text-sm font-medium"
+              >
+                Create Your First Habit
+              </button>
+            </div>
+          ) : filteredHabits.length === 0 ? (
+            <div className="bg-white shadow overflow-hidden sm:rounded-md p-6 text-center">
+              <p className="text-gray-500">No habits match your filters.</p>
+              <button 
+                onClick={clearFilters} 
+                className="mt-4 bg-primary-600 text-white hover:bg-primary-700 px-4 py-2 rounded-md text-sm font-medium"
+              >
+                Clear Filters
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white shadow overflow-hidden sm:rounded-md">
+              <ul className="divide-y divide-gray-200">
+                {filteredHabits.map((habit) => {
+                  const today = new Date().toISOString().split('T')[0];
+                  const isCompletedToday = habit.completedDates.includes(today);
+                  
+                  return (
+                    <li key={habit._id}>
+                      <div className={`px-4 py-4 sm:px-6 ${habit.archived ? 'bg-gray-50' : ''}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center">
+                              <h3 className={`text-lg font-medium ${habit.archived ? 'text-gray-500' : 'text-gray-900'}`}>{habit.title}</h3>
+                              {habit.archived && (
+                                <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800">
+                                  Archived
+                                </span>
+                              )}
+                            </div>
+                            {habit.description && (
+                              <p className="mt-1 text-sm text-gray-500">{habit.description}</p>
+                            )}
+                            <p className="mt-1 text-sm text-gray-500">
+                              Frequency: {habit.frequency === 'daily' ? 'Daily' : 'Weekly'}
+                            </p>
+                            {habit.category && (
+                              <p className="mt-1 text-sm text-gray-500">
+                                Category: <span className={`font-medium ${habit.archived ? 'text-gray-600' : 'text-primary-600'}`}>{habit.category}</span>
+                              </p>
+                            )}
+                            {habit.tags && habit.tags.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {habit.tags.map(tag => (
+                                  <span 
+                                    key={tag} 
+                                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                      habit.archived ? 'bg-gray-100 text-gray-700' : 'bg-primary-100 text-primary-800'
+                                    }`}
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {/* Streak information */}
+                            <div className="mt-2">
+                              <div className="flex items-center space-x-4">
+                                <div>
+                                  <div className="flex items-center">
+                                    <span className="text-sm font-medium text-gray-700">Current Streak:</span>
+                                    <span className={`ml-1 text-sm font-bold ${habit.streakCount > 0 ? 'text-primary-600' : 'text-gray-500'}`}>
+                                      {habit.streakCount} {habit.frequency === 'daily' ? 'day' : 'week'}{habit.streakCount !== 1 ? 's' : ''}
+                                    </span>
+                                  </div>
+                                  
+                                  {/* Streak visualization */}
+                                  {!habit.archived && habit.streakCount > 0 && (
+                                    <div className="mt-1 h-1.5 w-24 bg-gray-200 rounded-full overflow-hidden">
+                                      <div 
+                                        className="h-full bg-primary-600 rounded-full" 
+                                        style={{ 
+                                          width: `${Math.min(100, (habit.streakCount / (habit.longestStreak || 1)) * 100)}%` 
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {habit.longestStreak && habit.longestStreak > 0 && (
+                                  <div>
+                                    <div className="flex items-center">
+                                      <span className="text-sm font-medium text-gray-700">Best Streak:</span>
+                                      <span className="ml-1 text-sm font-bold text-amber-600">
+                                        {habit.longestStreak} {habit.frequency === 'daily' ? 'day' : 'week'}{habit.longestStreak !== 1 ? 's' : ''}
+                                      </span>
+                                    </div>
+                                    
+                                    {/* Trophy icon for longest streak */}
+                                    {habit.longestStreak >= 7 && (
+                                      <div className="mt-1 text-amber-500 text-xs flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 mr-1">
+                                          <path fillRule="evenodd" d="M5.166 2.621v.858c-1.035.148-2.059.33-3.071.543a.75.75 0 00-.584.859 6.937 6.937 0 006.634 5.848c.091.044.18.085.271.128a.75.75 0 00.982-.231l.993-1.68c.79.898 1.645 1.676 2.568 2.316l-1.92.839a.75.75 0 00-.432.97l.004.01a.75.75 0 00.97.433l2.9-1.27c.58.319 1.141.585 1.67.806a.75.75 0 00.745-.182l1.214-1.215h.001a.75.75 0 00.166-.85A6.935 6.935 0 009.255 2.82a.75.75 0 00-.584-.86A24.935 24.935 0 005.166 2.5v.121zm12.34 6.009c.137 2.517-.89 5.313-2.07 7.423a.75.75 0 001.342.673c1.303-2.377 2.106-5.054 2.095-7.428 0-.05 0-.1-.002-.152.147-.065.293-.13.44-.196l.170-.085c.327-.167.633-.347.925-.542a.75.75 0 00-.331-1.296 18.48 18.48 0 01-2.57-.69zM3.733 7.623a.75.75 0 00-.369 1.455c.243.099.489.193.74.282.14.054.284.104.428.152-.013.048-.02.096-.02.144 0 .383-.034.738-.098 1.072a.75.75 0 001.48.224A7.98 7.98 0 006 9.625c0-.356.074-.701.21-1.015a.75.75 0 00-.017-.968 3.05 3.05 0 01-.235-.274z" clipRule="evenodd" />
+                                        </svg>
+                                        Achievement!
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end space-y-2">
+                            {!habit.archived && (
+                              <button
+                                onClick={() => toggleHabitCompletion(habit._id)}
+                                className={`p-2 rounded-full ${
+                                  isCompletedToday
+                                    ? 'bg-primary-100 text-primary-600'
+                                    : 'bg-gray-100 text-gray-400'
+                                }`}
+                              >
+                                {isCompletedToday ? 'Completed' : 'Mark Complete'}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleEditHabit(habit)}
+                              className="text-gray-500 hover:text-primary-600 text-sm"
+                            >
+                              {habit.archived ? 'View/Restore' : 'Edit'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default DashboardPage; 

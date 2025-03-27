@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Add custom animation keyframes */
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+/* Progress bar animation */
+@keyframes progressFill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+/* Fade animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Apply animations to the illustration containers */
+.animate-exercise,
+.animate-reading,
+.animate-meditation {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* Stagger the animations */
+.animate-reading {
+  animation-delay: 1s;
+}
+
+.animate-meditation {
+  animation-delay: 2s;
+}
+
+/* Add hover effects */
+.group:hover .animate-exercise,
+.group:hover .animate-reading,
+.group:hover .animate-meditation {
+  animation-play-state: paused;
+}
+
+/* Dashboard transitions */
+.dashboard-transition-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.dashboard-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 500ms ease-in-out, transform 500ms ease-in-out;
+}
+
+.dashboard-transition-exit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dashboard-transition-exit-active {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 500ms ease-in-out, transform 500ms ease-in-out;
+}
+
+:root {
+  font-family: 'Inter var', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  @apply bg-gray-50;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* Custom styles go here */ 

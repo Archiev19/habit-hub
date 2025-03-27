@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // For development and testing - allow all access
+    // WARNING: These rules should be changed for production!
+    // match /{document=**} {
+    //   allow read, write;
+    // }
+    
+    // Production rules
+    // Users can read and write their own documents
+    match /users/{userId} {
+      allow create;
+      allow read, update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Habits can be read and written by their owners
+    match /habits/{habitId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+  }
+}
+
+
